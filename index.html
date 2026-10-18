@@ -405,13 +405,55 @@ textarea{min-height:80px;resize:vertical}
     if(!name || !isFinite(n) || n <= 0) return null;
     return { name, amountText: String(Math.round(n * 1000) / 1000), unit: normUnit(unit) };
   }
+  const RE_AMT_ONLY = [
+    new RegExp("^(?:各)?\\s*(?:大さじ|小さじ|大匙|小匙)\\s*(?:" + NUM + ")" + TAIL, "i"),
+    new RegExp("^(?:各)?\\s*約?(?:" + NUM + ")\\s*(?:" + UNIT_WORDS + ")?" + TAIL, "i"),
+    /^(?:各)?\s*(?:少々|適量|適宜|お好みで|好みで|ひとつまみ|少量|たっぷり|適当|ひとかけら|ひとかけ|ひとにぎり|少し)$/
+  ];
+  const isAmountOnly = t => RE_AMT_ONLY.some(r => r.test(t));
+  function stripLead(s){
+    s = s.replace(/^[\s・●○■□◆◇▶▷▼▽★☆•◎-]+/, "");
+    s = s.replace(/^[【\[<《][^】\]>》]*[】\]>》]\s*/, "");
+    s = s.replace(/^[（(]?[A-Ea-e][）)]\s*/, "").replace(/^[A-E]\s+(?=[^\x00-\x7f])/, "");
+    return s.trim();
+  }
+  function parseOne(s){
+    let m;
+    if((m = s.match(RE_PRE))) return numItem(m[1], qty(m[3]), m[2]);
+    if((m = s.match(RE_POST))) return numItem(m[1], qty(m[2]), m[3]);
+    if((m = s.match(RE_PAREN))) return numItem(m[1], qty(m[2]), m[3]);
+    if((m = s.match(RE_NOTE))){
+      const nm = m[1].replace(/[:：]+$/, "").trim();
+      if(nm) return { name: nm, amountText: m[2], unit: "" };
+    }
+    return null;
+  }
+  const RE_YIELD = /(\d+(?:\.\d+)?\s*(?:人分|人前|個分|枚分|食分|皿分|杯分|本分|切れ分))/;
+  function isNameOnly(t){
+    t = stripLead(t);
+    return !!t && t.length <= 30 && !parseOne(t) && !isAmountOnly(t) && !/^[※*]/.test(t) && !/^[【\[<《]/.test(t)
+      && !RE_HEAD_WORD.test(t) && !/^[A-Za-z]$/.test(t) && !RE_YIELD.test(t);
+  }
+  // 「材料名」の次の行に「量」だけが書かれている形式（コピー時によくある）を1行にまとめる
+  function mergeLines(text){
+    const out = [];
+    String(text).split(/\r?\n/).forEach(raw => {
+      const s = cleanLine(raw);
+      if(!s) return;
+      const prev = out[out.length - 1];
+      const t = stripLead(s);
+      if(prev && isAmountOnly(t) && isNameOnly(prev.text)){ prev.text += " " + t; prev.raw += " " + raw.trim(); return; }
+      if(prev && /^[（(][^）)]*[）)]$/.test(t) && parseOne(stripLead(prev.text))){ prev.text += " " + t; return; }
+      out.push({ text: s, raw: raw.trim() });
+    });
+    return out;
+  }
   function parsePaste(text){
     const items = [], skipped = [];
     let yieldText = "";
-    String(text).split(/\r?\n/).forEach(raw => {
-      let s = cleanLine(raw);
-      if(!s) return;
-      const ym = s.match(/(\d+(?:\.\d+)?\s*(?:人分|人前|個分|枚分|食分|皿分|杯分|本分|切れ分))/);
+    mergeLines(text).forEach(({ text: s0, raw }) => {
+      let s = s0;
+      const ym = s.match(RE_YIELD);
       if(ym && (/材料/.test(s) || s.length <= 14) && !/\d+(?:\.\d+)?\s*(?:g|ml|cc)/i.test(s)){
         if(!yieldText) yieldText = ym[1].replace(/\s+/g, "");
         return;
@@ -419,23 +461,20 @@ textarea{min-height:80px;resize:vertical}
       if(/^[※*]/.test(s) || /^\d+(?:[、)）]|\.(?!\d))/.test(s)) return;
       if(/^(作り方|手順|ポイント|メモ|コツ|栄養|カロリー|材料)/.test(s) && !/\d/.test(s)) return;
       if(/^[【\[<《]/.test(s) && !/\d/.test(s)) return;
-      s = s.replace(/^[\s・●○■□◆◇▶▷▼▽★☆•◎-]+/, "");
-      s = s.replace(/^[【\[<《][^】\]>》]*[】\]>》]\s*/, "");
-      s = s.replace(/^[（(]?[A-Ea-e][）)]\s*/, "").replace(/^[A-E]\s+(?=[^\x00-\x7f])/, "");
-      s = s.trim();
+      s = stripLead(s);
       if(!s) return;
-      let m, it = null;
-      if((m = s.match(RE_PRE))) it = numItem(m[1], qty(m[3]), m[2]);
-      else if((m = s.match(RE_POST))) it = numItem(m[1], qty(m[2]), m[3]);
-      else if((m = s.match(RE_PAREN))) it = numItem(m[1], qty(m[2]), m[3]);
-      else if((m = s.match(RE_NOTE))){
-        const nm = m[1].replace(/[:：]+$/, "").trim();
-        if(nm) it = { name: nm, amountText: m[2], unit: "" };
+      // 「塩・こしょう・小麦粉 各少々」→ 3つの材料に分ける
+      const each = s.match(/^(.+?)\s+各\s*(.+)$/);
+      if(each){
+        const parts = each[1].split(/[・、,，\/]/).map(x => x.trim()).filter(Boolean);
+        const made = parts.map(n => parseOne(n + " " + each[2])).filter(Boolean);
+        if(made.length){ made.forEach(x => items.push(x)); return; }
       }
+      const it = parseOne(s);
       if(it){ items.push(it); return; }
       if(RE_HEAD_WORD.test(s) || /^[A-Za-z]$/.test(s)) return;
       if(s.length <= 15 && !/\d/.test(s)) items.push({ name: s.replace(/[:：]+$/, "").trim(), amountText: "", unit: "" });
-      else skipped.push(raw.trim());
+      else skipped.push(raw);
     });
     return { items, skipped, yieldText };
   }
