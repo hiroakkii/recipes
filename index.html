@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>分量計算レシピ帳</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@600;800&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#EFF2EA; --surface:#FFFFFF; --ink:#1E2820; --muted:#5E6B60; --line:#D3DACD;
+  --basil:#2E6A4C; --basil-ink:#FFFFFF; --saffron:#E3A72A; --saffron-soft:#FBEFD2; --danger:#B3402F;
+  --field:#F6F8F3;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px);
+  padding-bottom:env(safe-area-inset-bottom,0px);
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#141A16; --surface:#1D2520; --ink:#E6ECE4; --muted:#9AA79C; --line:#33403A;
+    --basil:#5FB487; --basil-ink:#0F1A13; --saffron:#E9B649; --saffron-soft:#3A3020; --danger:#E07A66;
+    --field:#18201B; color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#141A16; --surface:#1D2520; --ink:#E6ECE4; --muted:#9AA79C; --line:#33403A;
+  --basil:#5FB487; --basil-ink:#0F1A13; --saffron:#E9B649; --saffron-soft:#3A3020; --danger:#E07A66;
+  --field:#18201B; color-scheme:dark;
+}
+*,*::before,*::after{box-sizing:inherit}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font-family:"Zen Kaku Gothic New","Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP",system-ui,sans-serif;
+  font-size:16px;line-height:1.6;-webkit-text-size-adjust:100%}
+.wrap{max-width:640px;margin:0 auto;padding:20px 16px 64px}
+h1,h2{font-family:"Shippori Mincho","Hiragino Mincho ProN","Yu Mincho",serif;margin:0;line-height:1.3}
+h1{font-size:1.9rem;font-weight:800;letter-spacing:.02em}
+h2{font-size:1.55rem;font-weight:800}
+button{font:inherit;color:inherit;cursor:pointer}
+button:focus-visible,input:focus-visible,textarea:focus-visible,a:focus-visible{outline:3px solid var(--saffron);outline-offset:2px}
+.top{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;margin-bottom:6px}
+.status{font-size:.8rem;color:var(--muted);margin:0 0 20px}
+.btn{border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:9px 16px;font-weight:500;white-space:nowrap}
+.btn.primary{background:var(--basil);border-color:var(--basil);color:var(--basil-ink);font-weight:700}
+.btn.danger{color:var(--danger);border-color:var(--danger);background:transparent}
+.btn.ghost{background:transparent}
+.btn.small{padding:6px 12px;font-size:.88rem}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+
+/* recipe list */
+.list{list-style:none;margin:0;padding:0;border-top:1px solid var(--line)}
+.list li{border-bottom:1px solid var(--line)}
+.list button{all:unset;display:flex;justify-content:space-between;align-items:baseline;gap:12px;width:100%;padding:16px 4px;cursor:pointer;box-sizing:border-box}
+.list button:focus-visible{outline:3px solid var(--saffron)}
+.list .name{font-family:"Shippori Mincho","Hiragino Mincho ProN",serif;font-size:1.2rem;font-weight:600}
+.list .meta{font-size:.82rem;color:var(--muted);white-space:nowrap}
+.stale{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;background:var(--saffron-soft);border:1px solid var(--saffron);border-radius:14px;padding:10px 14px;margin:0 0 18px;font-size:.88rem}
+.empty{padding:36px 8px;text-align:center;color:var(--muted)}
+.backup{margin-top:36px;padding:16px;border:1px dashed var(--line);border-radius:14px}
+.backup p{margin:0 0 12px;font-size:.88rem;color:var(--muted)}
+
+/* recipe view */
+.back{all:unset;cursor:pointer;color:var(--basil);font-weight:500;display:inline-block;margin-bottom:14px}
+.yield{color:var(--muted);margin:4px 0 0}
+.ratio{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:22px 0 10px;flex-wrap:wrap}
+.factor{font-family:"Shippori Mincho",serif;font-size:2rem;font-weight:800;color:var(--basil);line-height:1}
+.factor small{font-family:"Zen Kaku Gothic New",sans-serif;font-size:.8rem;font-weight:500;color:var(--muted);margin-left:6px}
+.hint{font-size:.85rem;color:var(--muted);margin:0 0 10px}
+.ing{list-style:none;margin:0;padding:0;background:var(--surface);border:1px solid var(--line);border-radius:16px;overflow:hidden}
+.ing li{display:grid;grid-template-columns:1fr 112px 3.4em;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--line)}
+.ing li:last-child{border-bottom:0}
+.ing .iname{font-weight:500;overflow-wrap:anywhere}
+.ing .unit{color:var(--muted);font-size:.9rem}
+.ing input{width:100%;text-align:right;font:inherit;font-size:1.1rem;font-variant-numeric:tabular-nums;padding:8px 10px;border:1px solid transparent;border-radius:10px;background:var(--field);color:var(--ink)}
+.ing li.base{background:var(--saffron-soft)}
+.ing li.base input{border-color:var(--saffron);background:var(--surface)}
+.ing .fixed{text-align:right;color:var(--muted);padding-right:10px}
+.links{margin-top:26px}
+.links h3,.memo h3{font-size:1rem;margin:0 0 8px}
+.links ul{margin:0;padding:0;list-style:none}
+.links a{display:block;padding:10px 14px;margin-bottom:6px;border-radius:12px;background:var(--surface);border:1px solid var(--line);color:var(--basil);text-decoration:none;overflow-wrap:anywhere}
+.links a span{display:block;font-size:.78rem;color:var(--muted)}
+.memo{margin-top:22px}
+.memo p{white-space:pre-wrap;margin:0;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 14px}
+.actions{margin-top:28px;display:flex;gap:8px;justify-content:flex-end}
+
+/* editor */
+label{display:block;font-size:.85rem;font-weight:700;margin:18px 0 6px}
+.field,textarea{width:100%;font:inherit;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--ink)}
+textarea{min-height:80px;resize:vertical}
+.erow{display:grid;grid-template-columns:1fr 84px 64px 36px;gap:6px;margin-bottom:6px}
+.lrow{display:grid;grid-template-columns:1fr 36px;gap:6px;margin-bottom:6px}
+.lrow .pair{display:grid;gap:4px}
+.x{border:0;background:transparent;color:var(--muted);font-size:1.3rem;border-radius:8px}
+.count{font-weight:400;color:var(--muted);margin-left:6px}
+.sticky{position:sticky;bottom:0;padding:12px 0 calc(12px + env(safe-area-inset-bottom,0px));background:linear-gradient(transparent,var(--bg) 30%);display:flex;justify-content:flex-end;gap:8px;margin-top:20px}
+.err{color:var(--danger);font-size:.88rem;margin-top:8px}
+.toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 18px;border-radius:999px;font-size:.9rem;opacity:0;pointer-events:none;transition:opacity .2s}
+.toast.show{opacity:1}
+@media (prefers-reduced-motion: reduce){.toast{transition:none}}
+@media (max-width:420px){
+  .ing li{grid-template-columns:1fr 96px 2.8em}
+  .erow{grid-template-columns:1fr 70px 52px 32px}
+}
+</style>
+</head>
+<body>
+<div class="wrap" id="app"></div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<input type="file" id="importFile" accept=".json,application/json" hidden>
+
+<script>
+(function(){
+  const MAX_ING = 20;
+  const LS_KEY = "recipe-scaler-v1";
+  let book = { recipes: [], updatedAt: 0 };
+  let view = { screen: "list", id: null, factor: 1, baseIdx: null };
+  let draft = null;
+  let cloud = null;           // db doc ref
+  let cloudState = "local";   // local | syncing | cloud
+  let writeChain = Promise.resolve();
+  const app = document.getElementById("app");
+
+  // ---------- storage ----------
+  function loadLocal(){
+    try{ const raw = localStorage.getItem(LS_KEY); if(raw){ const d = JSON.parse(raw); if(d && Array.isArray(d.recipes)) book = d; } }catch(e){}
+  }
+  function saveLocal(){ try{ localStorage.setItem(LS_KEY, JSON.stringify(book)); }catch(e){} }
+  function persist(){
+    book.updatedAt = Date.now();
+    saveLocal();
+    if(cloud){
+      const snapshot = JSON.parse(JSON.stringify(book));
+      writeChain = writeChain.then(()=>cloud.set(snapshot)).then(()=>{cloudState="cloud";updateStatus();})
+        .catch(()=>{cloudState="local";updateStatus();});
+    }
+  }
+  async function connectCloud(){
+    try{
+      const db = await claude.use("db");
+      const user = await claude.use("user");
+      if(!db || !user) return;
+      const uid = await user.id();
+      if(!uid) return;
+      cloud = db.doc("data/users/" + uid + "/book");
+      cloudState = "syncing"; updateStatus();
+      const snap = await cloud.get();
+      const remote = snap.exists ? snap.data() : null;
+      if(remote && Array.isArray(remote.recipes) && (remote.updatedAt||0) >= (book.updatedAt||0)){
+        book = JSON.parse(JSON.stringify(remote));
+        saveLocal();
+        if(view.screen !== "edit") render();
+      } else if(book.recipes.length){
+        await cloud.set(JSON.parse(JSON.stringify(book)));
+      }
+      cloudState = "cloud"; updateStatus();
+    }catch(e){ cloud = null; cloudState = "local"; updateStatus(); }
+  }
+
+  // ---------- helpers ----------
+  const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2,7);
+  const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+  function parseNum(s){
+    if(s == null) return NaN;
+    s = String(s).trim().replace(/[０-９．]/g, c => String.fromCharCode(c.charCodeAt(0)-0xFEE0)).replace(/,/g,"");
+    if(s === "") return NaN;
+    const frac = s.match(/^(\d+)\s*\/\s*(\d+)$/);
+    if(frac) return Number(frac[1]) / Number(frac[2]);
+    return Number(s);
+  }
+  function fmt(n){
+    if(!isFinite(n)) return "";
+    const a = Math.abs(n);
+    let r;
+    if(a >= 100) r = Math.round(n);
+    else if(a >= 10) r = Math.round(n*10)/10;
+    else r = Math.round(n*100)/100;
+    return String(r);
+  }
+  function safeUrl(u){
+    u = String(u||"").trim();
+    if(!u) return "";
+    if(!/^https?:\/\//i.test(u)) u = "https://" + u;
+    try{ const x = new URL(u); return (x.protocol==="http:"||x.protocol==="https:") ? x.href : ""; }catch(e){ return ""; }
+  }
+  function host(u){ try{ return new URL(u).hostname.replace(/^www\./,""); }catch(e){ return u; } }
+  let toastTimer;
+  function toast(msg){
+    const t = document.getElementById("toast");
+    t.textContent = msg; t.classList.add("show");
+    clearTimeout(toastTimer); toastTimer = setTimeout(()=>t.classList.remove("show"), 2400);
+  }
+  function statusText(){
+    if(cloudState==="cloud") return "レシピはあなたのアカウントに自動保存されています";
+    if(cloudState==="syncing") return "保存先と同期しています…";
+    return "レシピはこの端末に自動保存されています。念のためファイルにも書き出しておくと安心です";
+  }
+  function updateStatus(){ const el = document.getElementById("status"); if(el) el.textContent = statusText(); }
+  const current = () => book.recipes.find(r => r.id === view.id);
+
+  const WEEK = 7*24*60*60*1000;
+  const K_EXP = "recipe-scaler-exported-at", K_PENDING = "recipe-scaler-pending", K_SINCE = "recipe-scaler-since";
+  const lsGet = k => { try{ return localStorage.getItem(k); }catch(e){ return null; } };
+  const lsSet = (k,v) => { try{ localStorage.setItem(k, String(v)); }catch(e){} };
+  const lsDel = k => { try{ localStorage.removeItem(k); }catch(e){} };
+  function markExported(){
+    lsSet(K_EXP, Date.now()); lsDel(K_PENDING);
+    if(view.screen!=="edit") render();
+  }
+  function markRegistered(){
+    lsSet(K_PENDING, "1");
+    if(!lsGet(K_SINCE)) lsSet(K_SINCE, Date.now());
+  }
+  function banner(){
+    if(!book.recipes.length) return "";
+    let msg = "";
+    if(lsGet(K_PENDING)){
+      msg = "レシピを保存しました。「ファイル」アプリのバックアップも更新しましょう";
+    }else{
+      const last = Number(lsGet(K_EXP)) || Number(lsGet(K_SINCE)) || 0;
+      if(last && Date.now() - last >= WEEK){
+        const days = Math.floor((Date.now() - last) / 86400000);
+        msg = `前回のファイル保存から${days}日たっています。バックアップを更新しましょう`;
+      }
+    }
+    if(!msg) return "";
+    return `<div class="stale"><span>${esc(msg)}</span><button class="btn small primary" data-act="export">ファイルを更新</button></div>`;
+  }
+
+  // ---------- screens ----------
+  function render(){
+    if(view.screen === "list") renderList();
+    else if(view.screen === "recipe") renderRecipe();
+    else renderEdit();
+  }
+
+  function renderList(){
+    const rs = [...book.recipes].sort((a,b)=>a.name.localeCompare(b.name,"ja"));
+    app.innerHTML = `
+      <div class="top"><h1>分量計算レシピ帳</h1><button class="btn primary" data-act="new">レシピを追加</button></div>
+      <p class="status" id="status">${esc(statusText())}</p>
+      ${banner()}
+      ${rs.length ? `<ul class="list">${rs.map(r=>`
+        <li><button data-open="${esc(r.id)}"><span class="name">${esc(r.name)}</span>
+        <span class="meta">${r.ingredients.length}種類${r.yield?`・${esc(r.yield)}`:""}</span></button></li>`).join("")}</ul>`
+        : `<div class="empty">まだレシピがありません。<br>「レシピを追加」から材料と分量を登録してください。</div>`}
+      <section class="backup" aria-label="バックアップ">
+        <p>登録済みの全レシピを「recipes.json」1つにまとめて書き出します。共有メニューで「“ファイル”に保存」を選び、前回と同じ場所に保存して「置き換える」を選ぶと上書きできます。機種変更や別の端末では「ファイルから読み込む」で復元できます。</p>
+        <div class="row">
+          <button class="btn" data-act="export">ファイルに書き出す</button>
+          <button class="btn" data-act="import">ファイルから読み込む</button>
+        </div>
+      </section>`;
+  }
+
+  function renderRecipe(){
+    const r = current();
+    if(!r){ view.screen="list"; return render(); }
+    const f = view.factor;
+    app.innerHTML = `
+      <button class="back" data-act="home">‹ レシピ一覧</button>
+      <h2>${esc(r.name)}</h2>
+      ${r.yield ? `<p class="yield">基本の分量：${esc(r.yield)}</p>` : ""}
+      <div style="margin-top:14px">${banner()}</div>
+      <div class="ratio">
+        <div class="factor" id="factor">×${fmt(f)}<small>基本の分量に対して</small></div>
+        <div class="row">
+          <button class="btn small" data-mult="0.5">半量</button>
+          <button class="btn small" data-mult="2">2倍</button>
+          <button class="btn small ghost" data-act="reset">元に戻す</button>
+        </div>
+      </div>
+      <p class="hint">どれか1つの材料の量を書き換えると、ほかの材料が同じ比率で計算されます。</p>
+      <ul class="ing">${r.ingredients.map((g,i)=>{
+        const scalable = isFinite(g.amount) && g.amount > 0;
+        return `<li class="${view.baseIdx===i?"base":""}" data-row="${i}">
+          <span class="iname">${esc(g.name)}</span>
+          ${scalable
+            ? `<input inputmode="decimal" autocomplete="off" aria-label="${esc(g.name)}の量" data-idx="${i}" value="${fmt(g.amount*f)}">`
+            : `<span class="fixed">${esc(g.note||"適量")}</span>`}
+          <span class="unit">${scalable?esc(g.unit):""}</span></li>`;}).join("")}</ul>
+      ${r.links && r.links.length ? `<section class="links"><h3>参考にしたページ</h3><ul>${r.links.map(l=>{
+        const u = safeUrl(l.url); if(!u) return "";
+        return `<li><a href="${esc(u)}" target="_blank" rel="noopener noreferrer">${esc(l.title||host(u))}<span>${esc(host(u))}</span></a></li>`;}).join("")}</ul></section>` : ""}
+      ${r.memo ? `<section class="memo"><h3>メモ</h3><p>${esc(r.memo)}</p></section>` : ""}
+      <div class="actions"><button class="btn" data-act="edit">編集する</button></div>`;
+  }
+
+  function applyFactor(f, baseIdx, skipInput){
+    view.factor = f; view.baseIdx = baseIdx;
+    const r = current();
+    document.getElementById("factor").innerHTML = `×${fmt(f)}<small>基本の分量に対して</small>`;
+    app.querySelectorAll(".ing li").forEach(li=>li.classList.toggle("base", Number(li.dataset.row)===baseIdx));
+    app.querySelectorAll(".ing input").forEach(inp=>{
+      if(inp === skipInput) return;
+      const g = r.ingredients[Number(inp.dataset.idx)];
+      inp.value = fmt(g.amount * f);
+    });
+  }
+
+  function newDraft(r){
+    if(r) return JSON.parse(JSON.stringify({...r, ingredients: r.ingredients.map(g=>({...g, amountText: isFinite(g.amount)&&g.amount>0 ? fmt(g.amount) : (g.note||"")}))}));
+    return { id:null, name:"", yield:"", memo:"", links:[{title:"",url:""}],
+      ingredients:[{name:"",amountText:"",unit:"g"},{name:"",amountText:"",unit:"g"},{name:"",amountText:"",unit:"g"}] };
+  }
+
+  function renderEdit(err){
+    const d = draft;
+    app.innerHTML = `
+      <button class="back" data-act="cancel">‹ ${d.id?"レシピに戻る":"レシピ一覧"}</button>
+      <h2>${d.id?"レシピを編集":"新しいレシピ"}</h2>
+      <label for="f-name">料理名</label>
+      <input class="field" id="f-name" data-f="name" value="${esc(d.name)}" placeholder="例：鶏の照り焼き">
+      <label for="f-yield">基本の分量（何人分・何個分など）</label>
+      <input class="field" id="f-yield" data-f="yield" value="${esc(d.yield)}" placeholder="例：2人分">
+      <label>材料<span class="count">${d.ingredients.length} / ${MAX_ING}</span></label>
+      <p class="hint" style="margin-top:0">量に数字以外（「少々」など）を書いた材料は計算せずにそのまま表示します。</p>
+      ${d.ingredients.map((g,i)=>`
+        <div class="erow">
+          <input class="field" data-ing="${i}" data-k="name" value="${esc(g.name)}" placeholder="材料名" aria-label="材料${i+1}の名前">
+          <input class="field" data-ing="${i}" data-k="amountText" value="${esc(g.amountText)}" placeholder="量" inputmode="decimal" aria-label="材料${i+1}の量">
+          <input class="field" data-ing="${i}" data-k="unit" value="${esc(g.unit)}" placeholder="単位" aria-label="材料${i+1}の単位">
+          <button class="x" data-del-ing="${i}" aria-label="材料${i+1}を削除">×</button>
+        </div>`).join("")}
+      ${d.ingredients.length < MAX_ING ? `<button class="btn small" data-act="add-ing">材料を追加</button>` : `<p class="hint">材料は${MAX_ING}種類まで登録できます。</p>`}
+      <label>参考にしたリンク</label>
+      ${d.links.map((l,i)=>`
+        <div class="lrow"><div class="pair">
+          <input class="field" data-link="${i}" data-k="url" value="${esc(l.url)}" placeholder="https://…" inputmode="url" autocapitalize="off" aria-label="リンク${i+1}のURL">
+          <input class="field" data-link="${i}" data-k="title" value="${esc(l.title)}" placeholder="表示名（空欄ならサイト名）" aria-label="リンク${i+1}の表示名">
+        </div><button class="x" data-del-link="${i}" aria-label="リンク${i+1}を削除">×</button></div>`).join("")}
+      <button class="btn small" data-act="add-link">リンクを追加</button>
+      <label for="f-memo">メモ</label>
+      <textarea id="f-memo" data-f="memo" placeholder="手順のポイントなど">${esc(d.memo)}</textarea>
+      ${err?`<p class="err" role="alert">${esc(err)}</p>`:""}
+      <div class="sticky">
+        ${d.id?`<button class="btn danger" data-act="delete">削除</button>`:""}
+        <button class="btn primary" data-act="save">保存する</button>
+      </div>`;
+  }
+
+  function saveDraft(){
+    const d = draft;
+    const name = d.name.trim();
+    if(!name) return renderEdit("料理名を入力してください。");
+    const ings = d.ingredients.filter(g=>g.name.trim()).map(g=>{
+      const n = parseNum(g.amountText);
+      return (isFinite(n) && n > 0)
+        ? { name:g.name.trim(), amount:n, unit:g.unit.trim() }
+        : { name:g.name.trim(), amount:null, unit:g.unit.trim(), note:g.amountText.trim() };
+    });
+    if(!ings.length) return renderEdit("材料を1つ以上入力してください。");
+    if(!ings.some(g=>g.amount)) return renderEdit("少なくとも1つの材料に数字で量を入力してください。");
+    const links = d.links.map(l=>({title:l.title.trim(), url:safeUrl(l.url)})).filter(l=>l.url);
+    const rec = { id: d.id || uid(), name, yield:d.yield.trim(), memo:d.memo.trim(), links, ingredients:ings };
+    const i = book.recipes.findIndex(r=>r.id===rec.id);
+    if(i>=0) book.recipes[i] = rec; else book.recipes.push(rec);
+    persist();
+    markRegistered();
+    draft = null;
+    view = { screen:"recipe", id:rec.id, factor:1, baseIdx:null };
+    render(); window.scrollTo(0,0);
+    toast("保存しました");
+  }
+
+  // ---------- export / import ----------
+  async function exportFile(){
+    if(!book.recipes.length){ toast("書き出すレシピがありません"); return; }
+    const d = new Date();
+    const name = "recipes.json";
+    const mark = book.updatedAt || Date.now();
+    const data = JSON.stringify({ app:"recipe-scaler", version:1, exportedAt:d.toISOString(), recipes:book.recipes }, null, 2);
+    let dl = null;
+    try{ dl = window.claude ? await claude.use("downloads") : null; }catch(e){}
+    if(dl){
+      try{ await dl.save({ filename:name, data }); markExported(); toast("書き出しました"); }
+      catch(e){ if(e && e.code !== "declined") toast("書き出せませんでした（" + (e.code||"エラー") + "）"); }
+      return;
+    }
+    try{
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(new Blob([data],{type:"application/json"}));
+      a.download = name; document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(()=>URL.revokeObjectURL(a.href), 4000); markExported();
+    }catch(e){ toast("この画面では書き出せません"); }
+  }
+  function importFile(file){
+    const reader = new FileReader();
+    reader.onload = () => {
+      let data;
+      try{ data = JSON.parse(reader.result); }catch(e){ toast("JSONファイルとして読み込めませんでした"); return; }
+      const list = Array.isArray(data) ? data : data && data.recipes;
+      if(!Array.isArray(list)){ toast("レシピのデータが見つかりませんでした"); return; }
+      const valid = list.filter(r=>r && typeof r.name==="string" && Array.isArray(r.ingredients)).map(r=>({
+        id: String(r.id || uid()), name:r.name, yield:String(r.yield||""), memo:String(r.memo||""),
+        links: Array.isArray(r.links) ? r.links.map(l=>({title:String(l.title||""), url:safeUrl(l.url)})).filter(l=>l.url) : [],
+        ingredients: r.ingredients.slice(0,MAX_ING).map(g=>({ name:String(g.name||""), amount: (typeof g.amount==="number"&&g.amount>0)?g.amount:null, unit:String(g.unit||""), note: g.note?String(g.note):undefined }))
+      }));
+      if(!valid.length){ toast("読み込めるレシピがありませんでした"); return; }
+      let added=0, updated=0;
+      valid.forEach(r=>{
+        const i = book.recipes.findIndex(x=>x.id===r.id);
+        if(i>=0){ book.recipes[i]=r; updated++; } else { book.recipes.push(r); added++; }
+      });
+      persist(); view={screen:"list",id:null,factor:1,baseIdx:null}; render();
+      toast(`${added}件を追加、${updated}件を更新しました`);
+    };
+    reader.readAsText(file);
+  }
+
+  // ---------- events ----------
+  app.addEventListener("click", e=>{
+    const t = e.target.closest("button"); if(!t) return;
+    if(t.dataset.open){ view={screen:"recipe",id:t.dataset.open,factor:1,baseIdx:null}; render(); window.scrollTo(0,0); return; }
+    if(t.dataset.mult){ applyFactor(view.factor*Number(t.dataset.mult), null); return; }
+    if(t.dataset.delIng!=null){ draft.ingredients.splice(Number(t.dataset.delIng),1); if(!draft.ingredients.length) draft.ingredients.push({name:"",amountText:"",unit:""}); renderEdit(); return; }
+    if(t.dataset.delLink!=null){ draft.links.splice(Number(t.dataset.delLink),1); renderEdit(); return; }
+    switch(t.dataset.act){
+      case "new": draft=newDraft(); view.screen="edit"; render(); window.scrollTo(0,0); break;
+      case "home": view={screen:"list",id:null,factor:1,baseIdx:null}; render(); break;
+      case "reset": applyFactor(1,null); break;
+      case "edit": draft=newDraft(current()); view.screen="edit"; render(); window.scrollTo(0,0); break;
+      case "cancel": draft=null; view.screen = view.id && current() ? "recipe" : "list"; render(); break;
+      case "add-ing":
+        if(draft.ingredients.length<MAX_ING){ draft.ingredients.push({name:"",amountText:"",unit:""}); renderEdit();
+          const ins=app.querySelectorAll('[data-k="name"][data-ing]'); ins[ins.length-1].focus(); }
+        break;
+      case "add-link": draft.links.push({title:"",url:""}); renderEdit(); break;
+      case "save": saveDraft(); break;
+      case "delete":
+        if(confirm(`「${draft.name}」を削除しますか？`)){
+          book.recipes = book.recipes.filter(r=>r.id!==draft.id); persist(); draft=null;
+          view={screen:"list",id:null,factor:1,baseIdx:null}; render(); toast("削除しました");
+        }
+        break;
+      case "export": exportFile(); break;
+      case "import": document.getElementById("importFile").click(); break;
+    }
+  });
+  app.addEventListener("input", e=>{
+    const t = e.target;
+    if(view.screen==="recipe" && t.dataset.idx!=null){
+      const r = current(); const g = r.ingredients[Number(t.dataset.idx)];
+      const n = parseNum(t.value);
+      if(isFinite(n) && n>0) applyFactor(n/g.amount, Number(t.dataset.idx), t);
+      return;
+    }
+    if(view.screen==="edit" && draft){
+      if(t.dataset.f) draft[t.dataset.f] = t.value;
+      else if(t.dataset.ing!=null) draft.ingredients[Number(t.dataset.ing)][t.dataset.k] = t.value;
+      else if(t.dataset.link!=null) draft.links[Number(t.dataset.link)][t.dataset.k] = t.value;
+    }
+  });
+  app.addEventListener("focusout", e=>{
+    const t = e.target;
+    if(view.screen==="recipe" && t.dataset && t.dataset.idx!=null){
+      const g = current().ingredients[Number(t.dataset.idx)];
+      t.value = fmt(g.amount*view.factor);
+    }
+  });
+  app.addEventListener("focusin", e=>{ if(e.target.matches && e.target.matches(".ing input")) e.target.select(); });
+  document.getElementById("importFile").addEventListener("change", e=>{
+    const f = e.target.files && e.target.files[0]; if(f) importFile(f); e.target.value="";
+  });
+
+  loadLocal();
+  render();
+  if(window.claude && typeof claude.use === "function") connectCloud();
+})();
+</script>
+</body>
+</html>
