@@ -109,6 +109,9 @@ textarea{min-height:80px;resize:vertical}
 .count{font-weight:400;color:var(--muted);margin-left:6px}
 .sticky{position:sticky;bottom:0;padding:12px 0 calc(12px + env(safe-area-inset-bottom,0px));background:linear-gradient(transparent,var(--bg) 30%);display:flex;justify-content:flex-end;gap:8px;margin-top:20px}
 .err{color:var(--danger);font-size:.88rem;margin-top:8px}
+.paste{margin-top:18px;padding:12px;border:1px dashed var(--line);border-radius:14px}
+.paste textarea{min-height:150px;margin:10px 0;font-size:1rem}
+.paste .hint{margin:8px 0 0}
 .toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 18px;border-radius:999px;font-size:.9rem;opacity:0;pointer-events:none;transition:opacity .2s}
 .toast.show{opacity:1}
 @media (prefers-reduced-motion: reduce){.toast{transition:none}}
@@ -364,7 +367,99 @@ textarea{min-height:80px;resize:vertical}
     });
   }
 
+  // ---------- paste import ----------
+  let pasteText = "", pasteMsg = "", pasteOpen = false;
+  const UNIT_WORDS = "グラム|ミリリットル|リットル|キロ|kg|ml|cc|cm|mm|g|l|大さじ|小さじ|大匙|小匙|カップ|センチ|合|個|本|枚|片|かけ|パック|袋|缶|切れ|束|房|株|玉|丁|杯|つまみ|滴|尾|匹|粒|膳|把|箱";
+  const UNIT_MAP = {"グラム":"g","ミリリットル":"ml","リットル":"l","キロ":"kg","大匙":"大さじ","小匙":"小さじ","センチ":"cm"};
+  const NUM = "\\d+(?:\\.\\d+)?(?:\\s*(?:と|\\s)\\s*\\d+\\s*\\/\\s*\\d+|\\s*\\/\\s*\\d+)?";
+  const SEP = "[\\s:：…・.]*";
+  const TAIL = "\\s*(?:[（(].*[）)])?\\s*$";
+  const RE_PRE = new RegExp("^(.+?)" + SEP + "(大さじ|小さじ|大匙|小匙)\\s*(" + NUM + ")" + TAIL, "i");
+  const RE_POST = new RegExp("^(.+?)" + SEP + "約?(" + NUM + ")\\s*(" + UNIT_WORDS + ")?" + TAIL, "i");
+  const RE_PAREN = new RegExp("^(.+?)[（(]\\s*(" + NUM + ")\\s*(" + UNIT_WORDS + ")\\s*[）)]$", "i");
+  const RE_NOTE = new RegExp("^(.+?)" + SEP + "(少々|適量|適宜|お好みで|好みで|ひとつまみ|少量|たっぷり|適当|ひとかけら|ひとかけ|ひとにぎり|少し)$");
+  const RE_HEAD_WORD = /(調味料|材料|たれ|タレ|ソース|衣|トッピング|下味|飾り|その他|作り方|手順|ポイント|メモ|コツ)$/;
+  function qty(s){
+    s = s.replace(/\s+/g, " ").trim();
+    let m = s.match(/^(\d+(?:\.\d+)?)\s*(?:と|\s)\s*(\d+)\s*\/\s*(\d+)$/);
+    if(m) return Number(m[1]) + Number(m[2]) / Number(m[3]);
+    m = s.match(/^(\d+)\s*\/\s*(\d+)$/);
+    if(m) return Number(m[1]) / Number(m[2]);
+    return parseFloat(s);
+  }
+  function cleanLine(raw){
+    const frac = {"½":" 1/2","¼":" 1/4","¾":" 3/4","⅓":" 1/3","⅔":" 2/3"};
+    let s = String(raw).replace(/[½¼¾⅓⅔]/g, c => frac[c]);
+    s = s.normalize("NFKC").replace(/[\u2044\u2215]/g, "/").replace(/\t/g, " ");
+    s = s.replace(/([\d./]+)\s*[~〜–-]\s*[\d./]+/g, "$1");
+    s = s.replace(/[.·…・]{2,}/g, " ");
+    return s.trim();
+  }
+  function normUnit(u){
+    if(!u) return "";
+    if(UNIT_MAP[u]) return UNIT_MAP[u];
+    return /^[a-z]+$/i.test(u) ? u.toLowerCase() : u;
+  }
+  function numItem(name, n, unit){
+    name = name.replace(/[:：]+$/, "").trim();
+    if(!name || !isFinite(n) || n <= 0) return null;
+    return { name, amountText: String(Math.round(n * 1000) / 1000), unit: normUnit(unit) };
+  }
+  function parsePaste(text){
+    const items = [], skipped = [];
+    let yieldText = "";
+    String(text).split(/\r?\n/).forEach(raw => {
+      let s = cleanLine(raw);
+      if(!s) return;
+      const ym = s.match(/(\d+(?:\.\d+)?\s*(?:人分|人前|個分|枚分|食分|皿分|杯分|本分|切れ分))/);
+      if(ym && (/材料/.test(s) || s.length <= 14) && !/\d+(?:\.\d+)?\s*(?:g|ml|cc)/i.test(s)){
+        if(!yieldText) yieldText = ym[1].replace(/\s+/g, "");
+        return;
+      }
+      if(/^[※*]/.test(s) || /^\d+(?:[、)）]|\.(?!\d))/.test(s)) return;
+      if(/^(作り方|手順|ポイント|メモ|コツ|栄養|カロリー|材料)/.test(s) && !/\d/.test(s)) return;
+      if(/^[【\[<《]/.test(s) && !/\d/.test(s)) return;
+      s = s.replace(/^[\s・●○■□◆◇▶▷▼▽★☆•◎-]+/, "");
+      s = s.replace(/^[【\[<《][^】\]>》]*[】\]>》]\s*/, "");
+      s = s.replace(/^[（(]?[A-Ea-e][）)]\s*/, "").replace(/^[A-E]\s+(?=[^\x00-\x7f])/, "");
+      s = s.trim();
+      if(!s) return;
+      let m, it = null;
+      if((m = s.match(RE_PRE))) it = numItem(m[1], qty(m[3]), m[2]);
+      else if((m = s.match(RE_POST))) it = numItem(m[1], qty(m[2]), m[3]);
+      else if((m = s.match(RE_PAREN))) it = numItem(m[1], qty(m[2]), m[3]);
+      else if((m = s.match(RE_NOTE))){
+        const nm = m[1].replace(/[:：]+$/, "").trim();
+        if(nm) it = { name: nm, amountText: m[2], unit: "" };
+      }
+      if(it){ items.push(it); return; }
+      if(RE_HEAD_WORD.test(s) || /^[A-Za-z]$/.test(s)) return;
+      if(s.length <= 15 && !/\d/.test(s)) items.push({ name: s.replace(/[:：]+$/, "").trim(), amountText: "", unit: "" });
+      else skipped.push(raw.trim());
+    });
+    return { items, skipped, yieldText };
+  }
+  function applyPaste(){
+    const r = parsePaste(pasteText);
+    if(!r.items.length){
+      pasteMsg = "材料を読み取れませんでした。1行に1つ、「材料名 量」の形で貼り付けてください。";
+      return renderEdit();
+    }
+    const kept = draft.ingredients.filter(g => g.name.trim() || g.amountText.trim());
+    const room = Math.max(MAX_ING - kept.length, 0);
+    const add = r.items.slice(0, room);
+    draft.ingredients = kept.concat(add);
+    if(r.yieldText && !draft.yield.trim()) draft.yield = r.yieldText;
+    pasteMsg = add.length + "件の材料を反映しました。"
+      + (r.items.length > add.length ? "上限" + MAX_ING + "種類のため" + (r.items.length - add.length) + "件は反映していません。" : "")
+      + (r.skipped.length ? "読み取れなかった行：" + r.skipped.slice(0, 3).join(" / ") + (r.skipped.length > 3 ? " ほか" : "") + "。" : "")
+      + "内容を確認してください。";
+    pasteText = "";
+    renderEdit();
+  }
+
   function newDraft(r){
+    pasteText=""; pasteMsg=""; pasteOpen=!r;
     if(r) return JSON.parse(JSON.stringify({...r, ingredients: r.ingredients.map(g=>({...g, amountText: isFinite(g.amount)&&g.amount>0 ? fmt(g.amount) : (g.note||"")}))}));
     return { id:null, name:"", yield:"", memo:"", links:[{title:"",url:""}],
       ingredients:[{name:"",amountText:"",unit:"g"},{name:"",amountText:"",unit:"g"},{name:"",amountText:"",unit:"g"}] };
@@ -379,6 +474,13 @@ textarea{min-height:80px;resize:vertical}
       <input class="field" id="f-name" data-f="name" value="${esc(d.name)}" placeholder="例：鶏の照り焼き">
       <label for="f-yield">基本の分量（何人分・何個分など）</label>
       <input class="field" id="f-yield" data-f="yield" value="${esc(d.yield)}" placeholder="例：2人分">
+      <div class="paste">
+        <button class="btn small" data-act="toggle-paste" aria-expanded="${pasteOpen}">${pasteOpen?"▾":"▸"} レシピサイトの材料をまとめて貼り付ける</button>
+        ${pasteOpen?`<p class="hint">サイトの材料欄をコピーして、下に貼り付けてください。1行に1つの材料（例：鶏もも肉 300g ／ 醤油 大さじ2 ／ 塩 少々）で読み取ります。</p>
+        <textarea id="f-paste" placeholder="鶏もも肉 300g&#10;玉ねぎ 1/2個&#10;醤油 大さじ2&#10;塩 少々" aria-label="材料を貼り付け">${esc(pasteText)}</textarea>
+        <button class="btn small primary" data-act="apply-paste">材料に反映</button>`:""}
+        ${pasteMsg?`<p class="hint" role="status">${esc(pasteMsg)}</p>`:""}
+      </div>
       <label>材料<span class="count">${d.ingredients.length} / ${MAX_ING}</span></label>
       <p class="hint" style="margin-top:0">量に数字以外（「少々」など）を書いた材料は計算せずにそのまま表示します。</p>
       ${d.ingredients.map((g,i)=>`
@@ -495,6 +597,8 @@ textarea{min-height:80px;resize:vertical}
           const ins=app.querySelectorAll('[data-k="name"][data-ing]'); ins[ins.length-1].focus(); }
         break;
       case "add-link": draft.links.push({title:"",url:""}); renderEdit(); break;
+      case "toggle-paste": pasteOpen=!pasteOpen; renderEdit(); break;
+      case "apply-paste": applyPaste(); break;
       case "save": saveDraft(); break;
       case "delete":
         if(confirm(`「${draft.name}」を削除しますか？`)){
@@ -519,7 +623,8 @@ textarea{min-height:80px;resize:vertical}
       return;
     }
     if(view.screen==="edit" && draft){
-      if(t.dataset.f) draft[t.dataset.f] = t.value;
+      if(t.id==="f-paste") pasteText = t.value;
+      else if(t.dataset.f) draft[t.dataset.f] = t.value;
       else if(t.dataset.ing!=null) draft.ingredients[Number(t.dataset.ing)][t.dataset.k] = t.value;
       else if(t.dataset.link!=null) draft.links[Number(t.dataset.link)][t.dataset.k] = t.value;
     }
