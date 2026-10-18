@@ -58,6 +58,18 @@ button:focus-visible,input:focus-visible,textarea:focus-visible,a:focus-visible{
 .list .meta{font-size:.82rem;color:var(--muted);white-space:nowrap}
 .stale{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;background:var(--saffron-soft);border:1px solid var(--saffron);border-radius:14px;padding:10px 14px;margin:0 0 18px;font-size:.88rem}
 .empty{padding:36px 8px;text-align:center;color:var(--muted)}
+.search{position:relative;margin:0 0 6px}
+.search .field{padding-right:44px;font-size:1.05rem;border-radius:999px;padding-left:16px}
+.search .clr{position:absolute;right:6px;top:50%;transform:translateY(-50%);width:34px;height:34px;border:0;border-radius:50%;background:var(--line);color:var(--ink);font-size:1.1rem;line-height:1}
+.sugg{margin:0 0 10px;padding:4px 0;background:var(--surface);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.sugg button{all:unset;display:flex;align-items:center;gap:10px;width:100%;padding:11px 16px;cursor:pointer;box-sizing:border-box}
+.sugg button:focus-visible{outline:3px solid var(--saffron);outline-offset:-3px}
+.sugg .tag{font-size:.72rem;color:var(--muted);border:1px solid var(--line);border-radius:6px;padding:0 6px;flex:none}
+.sugg .tag.ing{color:var(--basil);border-color:var(--basil)}
+.count-line{font-size:.82rem;color:var(--muted);margin:10px 2px 6px}
+.list .main{display:block;min-width:0}
+.list .hit{display:block;font-size:.84rem;color:var(--basil);margin-top:2px;overflow-wrap:anywhere}
+mark.m{background:var(--saffron-soft);color:inherit;border-radius:3px;padding:0 1px}
 .backup{margin-top:36px;padding:16px;border:1px dashed var(--line);border-radius:14px}
 .backup p{margin:0 0 12px;font-size:.88rem;color:var(--muted)}
 
@@ -236,16 +248,67 @@ textarea{min-height:80px;resize:vertical}
     else renderEdit();
   }
 
+  let query = "", suggOpen = false;
+  const norm = s => String(s||"").normalize("NFKC").toLowerCase().replace(/[\u30a1-\u30f6]/g, c => String.fromCharCode(c.charCodeAt(0)-0x60)).replace(/\s+/g,"");
+  function hl(text, q){
+    // highlight the first match (normalized forms keep 1:1 length for kana/ASCII in practice)
+    const t = String(text); const i = norm(t).indexOf(q);
+    if(!q || i < 0 || norm(t).length !== t.length) return esc(t);
+    return esc(t.slice(0,i)) + '<mark class="m">' + esc(t.slice(i,i+q.length)) + '</mark>' + esc(t.slice(i+q.length));
+  }
+  function renderResults(){
+    const box = document.getElementById("results"); if(!box) return;
+    const sg = document.getElementById("sugg");
+    const clr = document.getElementById("qclr"); if(clr) clr.hidden = !query;
+    const q = norm(query);
+    const all = [...book.recipes].sort((a,b)=>a.name.localeCompare(b.name,"ja"));
+    const hits = {};
+    let rs = all;
+    if(q){
+      rs = all.filter(r=>{
+        const byName = norm(r.name).includes(q);
+        const ings = r.ingredients.map(g=>g.name).filter(n=>norm(n).includes(q));
+        hits[r.id] = ings;
+        return byName || ings.length;
+      });
+    }
+    // suggestions
+    let sugHtml = "";
+    if(q && suggOpen){
+      const rec = all.filter(r=>norm(r.name).includes(q) && norm(r.name)!==q)
+        .sort((a,b)=>(norm(b.name).startsWith(q)?1:0)-(norm(a.name).startsWith(q)?1:0)).slice(0,4);
+      const seen = new Set(); const ing = [];
+      all.forEach(r=>r.ingredients.forEach(g=>{
+        const n = g.name.trim(), k = norm(n);
+        if(k.includes(q) && k!==q && !seen.has(k)){ seen.add(k); ing.push(n); }
+      }));
+      ing.sort((a,b)=>(norm(b).startsWith(q)?1:0)-(norm(a).startsWith(q)?1:0));
+      const items = [
+        ...rec.map(r=>`<button data-sug-recipe="${esc(r.id)}"><span class="tag">レシピ</span><span>${hl(r.name,q)}</span></button>`),
+        ...ing.slice(0,5).map(n=>`<button data-sug-ing="${esc(n)}"><span class="tag ing">材料</span><span>${hl(n,q)}</span></button>`)
+      ];
+      sugHtml = items.join("");
+    }
+    if(sg){ sg.innerHTML = sugHtml; sg.hidden = !sugHtml; }
+    if(!book.recipes.length){ box.innerHTML = `<div class="empty">まだレシピがありません。<br>「レシピを追加」から材料と分量を登録してください。</div>`; return; }
+    if(!rs.length){ box.innerHTML = `<div class="empty">「${esc(query.trim())}」に一致するレシピや材料はありません。</div>`; return; }
+    box.innerHTML = (q ? `<p class="count-line">${rs.length}件が見つかりました</p>` : "") +
+      `<ul class="list">${rs.map(r=>{
+        const h = hits[r.id] || [];
+        return `<li><button data-open="${esc(r.id)}"><span class="main"><span class="name">${hl(r.name,q)}</span>${h.length?`<span class="hit">材料：${h.map(n=>hl(n,q)).join("、")}</span>`:""}</span>
+        <span class="meta">${r.ingredients.length}種類${r.yield?`・${esc(r.yield)}`:""}</span></button></li>`;}).join("")}</ul>`;
+  }
+
   function renderList(){
-    const rs = [...book.recipes].sort((a,b)=>a.name.localeCompare(b.name,"ja"));
     app.innerHTML = `
       <div class="top"><h1>分量計算レシピ帳</h1><button class="btn primary" data-act="new">レシピを追加</button></div>
       <p class="status" id="status">${esc(statusText())}</p>
       ${banner()}
-      ${rs.length ? `<ul class="list">${rs.map(r=>`
-        <li><button data-open="${esc(r.id)}"><span class="name">${esc(r.name)}</span>
-        <span class="meta">${r.ingredients.length}種類${r.yield?`・${esc(r.yield)}`:""}</span></button></li>`).join("")}</ul>`
-        : `<div class="empty">まだレシピがありません。<br>「レシピを追加」から材料と分量を登録してください。</div>`}
+      ${book.recipes.length ? `<div class="search" role="search">
+        <input class="field" id="q" type="text" enterkeyhint="search" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="レシピ名・材料で検索" aria-label="レシピ名または材料で検索" value="${esc(query)}">
+        <button class="clr" id="qclr" data-act="clearq" aria-label="検索をクリア" hidden>×</button></div>
+        <div class="sugg" id="sugg" hidden></div>` : ""}
+      <div id="results"></div>
       <section class="backup" aria-label="バックアップ">
         <p>登録済みの全レシピを「recipes.json」1つにまとめて書き出します。共有メニューで「“ファイル”に保存」を選び、前回と同じ場所に保存して「置き換える」を選ぶと上書きできます。機種変更や別の端末では「ファイルから読み込む」で復元できます。</p>
         <div class="row">
@@ -253,6 +316,7 @@ textarea{min-height:80px;resize:vertical}
           <button class="btn" data-act="import">ファイルから読み込む</button>
         </div>
       </section>`;
+    renderResults();
   }
 
   function renderRecipe(){
@@ -413,6 +477,9 @@ textarea{min-height:80px;resize:vertical}
   // ---------- events ----------
   app.addEventListener("click", e=>{
     const t = e.target.closest("button"); if(!t) return;
+    if(t.dataset.act==="clearq"){ query=""; suggOpen=false; const qi=document.getElementById("q"); qi.value=""; renderResults(); qi.focus(); return; }
+    if(t.dataset.sugIng!=null){ query=t.dataset.sugIng; suggOpen=false; document.getElementById("q").value=query; renderResults(); return; }
+    if(t.dataset.sugRecipe){ suggOpen=false; view={screen:"recipe",id:t.dataset.sugRecipe,factor:1,baseIdx:null}; render(); window.scrollTo(0,0); return; }
     if(t.dataset.open){ view={screen:"recipe",id:t.dataset.open,factor:1,baseIdx:null}; render(); window.scrollTo(0,0); return; }
     if(t.dataset.mult){ applyFactor(view.factor*Number(t.dataset.mult), null); return; }
     if(t.dataset.delIng!=null){ draft.ingredients.splice(Number(t.dataset.delIng),1); if(!draft.ingredients.length) draft.ingredients.push({name:"",amountText:"",unit:""}); renderEdit(); return; }
@@ -439,8 +506,12 @@ textarea{min-height:80px;resize:vertical}
       case "import": document.getElementById("importFile").click(); break;
     }
   });
+  app.addEventListener("keydown", e=>{
+    if(e.target.id==="q" && e.key==="Enter"){ suggOpen=false; renderResults(); e.target.blur(); }
+  });
   app.addEventListener("input", e=>{
     const t = e.target;
+    if(t.id==="q"){ query=t.value; suggOpen=true; renderResults(); return; }
     if(view.screen==="recipe" && t.dataset.idx!=null){
       const r = current(); const g = r.ingredients[Number(t.dataset.idx)];
       const n = parseNum(t.value);
