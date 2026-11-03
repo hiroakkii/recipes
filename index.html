@@ -122,6 +122,10 @@ textarea{min-height:80px;resize:vertical}
 .rlinks a{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.84rem;color:var(--basil);text-decoration:none;border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:5px 12px}
 .rlinks a:focus-visible{outline:3px solid var(--saffron);outline-offset:2px}
 .links.big{margin-top:18px}
+.backup + .backup{margin-top:14px}
+.backup textarea{min-height:90px;font-size:.95rem}
+.sharebox{margin-top:16px;padding:14px;border:1px solid var(--line);border-radius:14px;background:var(--surface)}
+.sharebox textarea{min-height:170px;margin:8px 0 10px;font-size:.9rem}
 .links.big a{padding:16px 16px;font-size:1.02rem}
 .paste{margin-top:18px;padding:12px;border:1px dashed var(--line);border-radius:14px}
 .paste textarea{min-height:150px;margin:10px 0;font-size:1rem}
@@ -343,6 +347,11 @@ textarea{min-height:80px;resize:vertical}
         <button class="clr" id="qclr" data-act="clearq" aria-label="検索をクリア" hidden>×</button></div>
         <div class="sugg" id="sugg" hidden></div>` : ""}
       <div id="results"></div>
+      <section class="backup" aria-label="共有されたレシピの読み込み">
+        <p>共有されたレシピのメッセージ（「RS1:」で始まるコードを含む文章）を、そのまま貼り付けて読み込めます。</p>
+        <textarea id="f-code" placeholder="ここに貼り付け" aria-label="共有されたメッセージ">${esc(codeText)}</textarea>
+        <div class="row" style="margin-top:8px"><button class="btn primary" data-act="import-code">共有コードから読み込む</button></div>
+      </section>
       <section class="backup" aria-label="バックアップ">
         <p>登録済みの全レシピを「recipes.json」1つにまとめて書き出します。共有メニューで「“ファイル”に保存」を選び、前回と同じ場所に保存して「置き換える」を選ぶと上書きできます。機種変更や別の端末では「ファイルから読み込む」で復元できます。</p>
         <div class="row">
@@ -385,7 +394,8 @@ textarea{min-height:80px;resize:vertical}
             : `<span class="fixed">${esc(g.note||"適量")}</span>`}
           <span class="unit">${scalable?esc(g.unit):""}</span></li>`;}).join("")}</ul>
       ${r.memo ? `<section class="memo"><h3>メモ</h3><p>${esc(r.memo)}</p></section>` : ""}
-      <div class="actions"><button class="btn" data-act="edit">編集する</button></div>`;
+      <div class="actions"><button class="btn" data-act="toggle-share" aria-expanded="${shareFor===r.id}">共有する</button><button class="btn" data-act="edit">編集する</button></div>
+      ${shareFor===r.id ? sharePanel(r) : ""}`;
   }
 
   function applyFactor(f, baseIdx, skipInput){
@@ -624,6 +634,98 @@ textarea{min-height:80px;resize:vertical}
       setTimeout(()=>URL.revokeObjectURL(a.href), 4000); markExported();
     }catch(e){ toast("この画面では書き出せません"); }
   }
+  function mergeRecipes(list){
+    const valid = list.filter(r=>r && typeof r.name==="string" && Array.isArray(r.ingredients)).map(r=>({
+      id: String(r.id || uid()), name:r.name, yield:String(r.yield||""), memo:String(r.memo||""),
+      links: Array.isArray(r.links) ? r.links.map(l=>({title:String(l.title||""), url:safeUrl(l.url)})).filter(l=>l.url) : [],
+      ingredients: r.ingredients.slice(0,MAX_ING).map(g=>({ name:String(g.name||""), amount: (typeof g.amount==="number"&&g.amount>0)?g.amount:null, unit:String(g.unit||""), note: g.note?String(g.note):undefined }))
+    }));
+    if(!valid.length){ toast("読み込めるレシピがありませんでした"); return false; }
+    let added=0, updated=0;
+    valid.forEach(r=>{
+      const i = book.recipes.findIndex(x=>x.id===r.id);
+      if(i>=0){ book.recipes[i]=r; updated++; } else { book.recipes.push(r); added++; }
+    });
+    persist(); view={screen:"list",id:null,factor:1,baseIdx:null}; render();
+    toast(`${added}件を追加、${updated}件を更新しました`);
+    return true;
+  }
+
+  // ---------- sharing ----------
+  let shareFor = null, codeText = "";
+  function toB64(str){
+    const bytes = new TextEncoder().encode(str); let bin = "";
+    bytes.forEach(b => bin += String.fromCharCode(b));
+    return btoa(bin).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"");
+  }
+  function fromB64(b){
+    b = b.replace(/-/g,"+").replace(/_/g,"/"); while(b.length % 4) b += "=";
+    const bin = atob(b);
+    return new TextDecoder().decode(Uint8Array.from(bin, c => c.charCodeAt(0)));
+  }
+  function plainRecipe(r){
+    return { id:r.id, name:r.name, yield:r.yield||"", memo:r.memo||"", links:r.links||[],
+      ingredients:r.ingredients.map(g=>({ name:g.name, amount:g.amount, unit:g.unit, note:g.note })) };
+  }
+  function shareText(r){
+    const code = "RS1:" + toB64(JSON.stringify({ v:1, recipes:[plainRecipe(r)] }));
+    const lines = ["【" + r.name + "】" + (r.yield ? "（" + r.yield + "）" : "")];
+    r.ingredients.forEach(g => lines.push("・" + g.name + " " + ((g.amount > 0) ? (/^(大さじ|小さじ)$/.test(g.unit) ? g.unit + fmt(g.amount) : fmt(g.amount) + g.unit) : (g.note || "適量"))));
+    (r.links||[]).forEach(l => { const u = safeUrl(l.url); if(u) lines.push("参考：" + (l.title ? l.title + " " : "") + u); });
+    if(r.memo) lines.push("メモ：" + r.memo);
+    lines.push("", "▼ 分量計算レシピ帳に貼り付けて読み込むコード", code);
+    return lines.join("\n");
+  }
+  async function copyText(t){
+    try{ await navigator.clipboard.writeText(t); return true; }catch(e){}
+    try{
+      const ta = document.createElement("textarea"); ta.value = t; ta.setAttribute("readonly","");
+      ta.style.position = "fixed"; ta.style.opacity = "0"; document.body.appendChild(ta);
+      ta.select(); ta.setSelectionRange(0, t.length);
+      const ok = document.execCommand("copy"); ta.remove(); return ok;
+    }catch(e){ return false; }
+  }
+  function sharePanel(r){
+    const canNative = typeof navigator.share === "function";
+    return `<section class="sharebox" aria-label="共有">
+      <p class="hint" style="margin-top:0">下の文章をLINEやメッセージで送ると、相手のアプリに貼り付けてレシピを読み込めます。アプリを持っていない人にも、材料はそのまま読めます。</p>
+      <textarea id="f-share" readonly aria-label="共有する文章">${esc(shareText(r))}</textarea>
+      <div class="row">
+        <button class="btn small primary" data-act="share-copy">文章をコピー</button>
+        ${canNative ? `<button class="btn small" data-act="share-native">共有メニューを開く</button>` : ""}
+        <button class="btn small" data-act="share-file">ファイルで送る</button>
+      </div></section>`;
+  }
+  async function shareFile(r){
+    const name = "recipe-" + r.name.replace(/[\\\/:*?"<>|\s]+/g,"_") + ".json";
+    const data = JSON.stringify({ app:"recipe-scaler", version:1, exportedAt:new Date().toISOString(), recipes:[plainRecipe(r)] }, null, 2);
+    let dl = null;
+    try{ dl = window.claude ? await claude.use("downloads") : null; }catch(e){}
+    if(dl){
+      try{ await dl.save({ filename:name, data }); toast("ファイルを書き出しました"); }
+      catch(e){ if(e && e.code !== "declined") toast("書き出せませんでした（" + (e.code||"エラー") + "）"); }
+      return;
+    }
+    try{
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(new Blob([data],{type:"application/json"}));
+      a.download = name; document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(()=>URL.revokeObjectURL(a.href), 4000);
+    }catch(e){ toast("この画面では書き出せません"); }
+  }
+  function importCode(){
+    const txt = codeText.trim();
+    if(!txt){ toast("共有されたメッセージを貼り付けてください"); return; }
+    let json = null;
+    const m = txt.match(/RS1:([A-Za-z0-9_-]+)/);
+    try{ json = m ? fromB64(m[1]) : (txt[0] === "{" ? txt : null); }catch(e){ json = null; }
+    let data = null;
+    try{ data = json ? JSON.parse(json) : null; }catch(e){}
+    const list = Array.isArray(data) ? data : data && data.recipes;
+    if(!Array.isArray(list)){ toast("共有コードを読み取れませんでした。「RS1:」から最後までコピーされているか確認してください"); return; }
+    if(mergeRecipes(list)) codeText = "";
+  }
+
   function importFile(file){
     const reader = new FileReader();
     reader.onload = () => {
@@ -631,19 +733,7 @@ textarea{min-height:80px;resize:vertical}
       try{ data = JSON.parse(reader.result); }catch(e){ toast("JSONファイルとして読み込めませんでした"); return; }
       const list = Array.isArray(data) ? data : data && data.recipes;
       if(!Array.isArray(list)){ toast("レシピのデータが見つかりませんでした"); return; }
-      const valid = list.filter(r=>r && typeof r.name==="string" && Array.isArray(r.ingredients)).map(r=>({
-        id: String(r.id || uid()), name:r.name, yield:String(r.yield||""), memo:String(r.memo||""),
-        links: Array.isArray(r.links) ? r.links.map(l=>({title:String(l.title||""), url:safeUrl(l.url)})).filter(l=>l.url) : [],
-        ingredients: r.ingredients.slice(0,MAX_ING).map(g=>({ name:String(g.name||""), amount: (typeof g.amount==="number"&&g.amount>0)?g.amount:null, unit:String(g.unit||""), note: g.note?String(g.note):undefined }))
-      }));
-      if(!valid.length){ toast("読み込めるレシピがありませんでした"); return; }
-      let added=0, updated=0;
-      valid.forEach(r=>{
-        const i = book.recipes.findIndex(x=>x.id===r.id);
-        if(i>=0){ book.recipes[i]=r; updated++; } else { book.recipes.push(r); added++; }
-      });
-      persist(); view={screen:"list",id:null,factor:1,baseIdx:null}; render();
-      toast(`${added}件を追加、${updated}件を更新しました`);
+      mergeRecipes(list);
     };
     reader.readAsText(file);
   }
@@ -680,6 +770,11 @@ textarea{min-height:80px;resize:vertical}
         break;
       case "export": exportFile(); break;
       case "import": document.getElementById("importFile").click(); break;
+      case "import-code": importCode(); break;
+      case "toggle-share": shareFor = shareFor === view.id ? null : view.id; render(); break;
+      case "share-copy": { const r = current(); if(r) copyText(shareText(r)).then(ok => toast(ok ? "コピーしました。メッセージに貼り付けて送れます" : "コピーできませんでした。下の文章を長押ししてコピーしてください")); break; }
+      case "share-native": { const r = current(); if(r) navigator.share({ title:r.name, text:shareText(r) }).catch(e => { if(e && e.name !== "AbortError") copyText(shareText(r)).then(ok => toast(ok ? "共有メニューが使えないため、文章をコピーしました" : "共有できませんでした。下の文章をコピーしてください")); }); break; }
+      case "share-file": { const r = current(); if(r) shareFile(r); break; }
     }
   });
   app.addEventListener("keydown", e=>{
@@ -687,6 +782,7 @@ textarea{min-height:80px;resize:vertical}
   });
   app.addEventListener("input", e=>{
     const t = e.target;
+    if(t.id==="f-code"){ codeText = t.value; return; }
     if(t.id==="q"){ query=t.value; suggOpen=true; renderResults(); return; }
     if(view.screen==="recipe" && t.dataset.idx!=null){
       const r = current(); const g = r.ingredients[Number(t.dataset.idx)];
